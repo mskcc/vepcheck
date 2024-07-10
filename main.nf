@@ -56,7 +56,6 @@ workflow MSKCC_VEPCHECK {
     )
 
     emit:
-    multiqc_report = VEPCHECK.out.multiqc_report // channel: /path/to/multiqc_report.html
 
 }
 /*
@@ -98,8 +97,7 @@ workflow {
         params.plaintext_email,
         params.outdir,
         params.monochrome_logs,
-        params.hook_url,
-        MSKCC_VEPCHECK.out.multiqc_report
+        params.hook_url
     )
 }
 
