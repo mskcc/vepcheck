@@ -4,8 +4,8 @@ process GENOMENEXUS_ANNOTATIONPIPELINE {
 
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'ghcr.io/msk-access/genomenexus_annotation-pipeline:1.0.3':
-        'ghcr.io/msk-access/genomenexus_annotation-pipeline:1.0.3' }"
+        'docker://mskcc/veptest_genomenexus_annotation-pipeline:1.0.3':
+        'docker.io/mskcc/veptest_genomenexus_annotation-pipeline:1.0.3' }"
 
     input:
     tuple val(meta), path(input_maf)
@@ -22,7 +22,7 @@ process GENOMENEXUS_ANNOTATIONPIPELINE {
     def prefix = task.ext.prefix ?: "${meta.id}"
 
     """
-    java -jar /genome-nexus-annotation-pipeline/annotationPipeline/target/annotationPipeline.jar --filename ${input_maf} --output-filename ${input_maf.basename}.genomenexus_annotation_1.0.3.maf
+    java -jar /genome-nexus-annotation-pipeline/annotationPipeline/target/annotationPipeline.jar --filename ${input_maf} --output-filename ${input_maf.baseName}.genomenexus_annotation_1.0.3.maf
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

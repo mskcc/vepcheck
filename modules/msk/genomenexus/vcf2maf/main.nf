@@ -2,12 +2,13 @@ process GENOMENEXUS_VCF2MAF {
     tag "$meta.id"
     label 'process_low'
 
+
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'ghcr.io/msk-access/genomenexus:vcf2maf_lite':
-        'ghcr.io/msk-access/genomenexus:vcf2maf_lite' }"
+        'docker://mskcc/veptest_vcf2maf_lite:latest':
+        'docker.io/mskcc/veptest_vcf2maf_lite:latest' }"
 
     input:
-    tuple val(meta), path(vcf), path(inputVcfIndex)
+    tuple val(meta), path(vcf)
 
     output:
     tuple val(meta), path("*.maf"), emit: maf
@@ -21,7 +22,7 @@ process GENOMENEXUS_VCF2MAF {
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
     python3 /vcf2maf-lite/vcf2maf_lite.py -i ${vcf} ${args}
-    mv vcf2maf_output/${meta.id}.maf ${vcf.baseName}.vcf2maf_lite_0.0.1.maf
+    mv vcf2maf_output/${vcf.baseName}.maf ${vcf.baseName}.vcf2maf_lite_0.0.1.maf
     echo '"${task.process}": vcf2maf_lite.py v.0.0.1' > versions.yml
     """
     stub:

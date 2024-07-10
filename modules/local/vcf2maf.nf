@@ -8,7 +8,7 @@ process VCF2MAF {
         'docker.io/mskcc/vcf2maf:1.6.17' }"
 
     input:
-    tuple val(meta),         path(inputVcf),      path(inputVcfIndex), val(vep_version),  path(vep_path),      path(vep_data)
+    tuple val(meta),         path(inputVcf),    val(vep_version),  path(vep_path),      path(vep_data)
     tuple val(meta2),        path(fasta)
     tuple val(meta3),        path(fai)
     tuple val(meta4),        path(exac_filter)
@@ -24,7 +24,7 @@ process VCF2MAF {
     def forks = task.cpus * 2
 
     """
-    perl /usr/bin/vcf2maf/vcf2maf.pl \\
+    vcf2maf.pl \\
         ${args} \\
         --cache-version ${vep_version} \\
         --vep-data ${vep_data} \\
