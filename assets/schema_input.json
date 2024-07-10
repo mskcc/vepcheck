@@ -19,8 +19,8 @@
                 "type": "string",
                 "format": "file-path",
                 "exists": true,
-                "pattern": "^\\S+\\.f(ast)?q\\.gz$",
-                "errorMessage": "Gzipped Vcf file"
+                "pattern": "^\\S+\\.vcf$",
+                "errorMessage": "Vcf file"
             }
         },
         "required": [
