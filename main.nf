@@ -56,6 +56,11 @@ workflow MSKCC_VEPCHECK {
     )
 
     emit:
+    versions            = VEPCHECK.out.versions                 // channel: [ path(versions.yml) ]
+    vep_vcf             = VEPCHECK.out.vep_vcf
+    maf                 = VEPCHECK.out.maf
+    nexus_annotated_maf = VEPCHECK.out.nexus_annotated_maf
+    vep_maf             = VEPCHECK.out.vep_maf
 
 }
 /*

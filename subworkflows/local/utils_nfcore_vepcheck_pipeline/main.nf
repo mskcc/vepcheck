@@ -84,7 +84,7 @@ workflow PIPELINE_INITIALISATION {
         .fromSamplesheet("input")
         .map {
             meta, vcf ->
-                    return [ meta.id, vcf ]
+                    return [ meta, vcf ]
         }
         .set { ch_samplesheet }
 
