@@ -3,9 +3,10 @@
     IMPORT MODULES / SUBWORKFLOWS / FUNCTIONS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-
-include { FASTQC                 } from '../modules/nf-core/fastqc/main'
-include { MULTIQC                } from '../modules/nf-core/multiqc/main'
+include { VCF2MAF }                from '../../../modules/local/vcf2maf'
+include { TABIX }                  from '../../../modules/local/tabix'
+include { GENOMENEXUS_VCF2MAF as vcf2maf_on_vep; GENOMENEXUS_VCF2MAF as vcf2maf_for_annotation} from '../../../modules/msk/genomenexus/vcf2maf/main'
+include { GENOMENEXUS_ANNOTATIONPIPELINE     } from '../../../modules/msk/genomenexus/annotationpipeline/main'
 include { paramsSummaryMap       } from 'plugin/nf-validation'
 include { paramsSummaryMultiqc   } from '../subworkflows/nf-core/utils_nfcore_pipeline'
 include { softwareVersionsToYAML } from '../subworkflows/nf-core/utils_nfcore_pipeline'
@@ -24,71 +25,118 @@ workflow VEPCHECK {
 
     main:
 
-    ch_versions = Channel.empty()
-    ch_multiqc_files = Channel.empty()
+    ch_fasta_ref = Channel.value([ "reference_genome", path(params.fasta) ])
+    ref_index_list = []
+    for(single_genome_ref in params.fasta_index){
+        ref_index_list.add(path(single_genome_ref))
+    }
+    ch_fasta_fai_ref = Channel.value([ "reference_genome_index",ref_index_list])
+    ch_exac_filter = Channel.value(["exac_filter", path(params.exac_filter)])
+    ch_exac_filter_index = Channel.value(["exac_filter_index", path(params.exac_filter_index)])
 
-    //
-    // MODULE: Run FastQC
-    //
-    FASTQC (
-        ch_samplesheet
-    )
-    ch_multiqc_files = ch_multiqc_files.mix(FASTQC.out.zip.collect{it[1]})
-    ch_versions = ch_versions.mix(FASTQC.out.versions.first())
+    vep_version = []
+    vep_list = []
+    vep_cache = []
+
+    for(single_vep_version in params.vep_version){
+        vep_version.add(params.single_vep_version)
+    }
+
+    for(single_vep in params.vep){
+        vep_list.add(path(single_vep))
+    }
+
+    for(single_vep_cache in params.vep_cache){
+        vep_cache.add(path(single_vep_cache))
+    }
+
+    if (vep_version.size != vep_list.size ||  vep_list.size != vep_cache.size) {
+        error "Error: vep version, cache and binary lists are not the same size "
+    }
+
+    vep_index = 0
+    vep_data = []
+
+    while(vep_index < vep_list.size){
+        vep_data.append([vep_version[vep_index], vep_list[vep_index]], vep_cache[vep_index])
+    }
+
+    vep_data_channel = Channel.value(vep_data)
+
+
+    ch_versions = Channel.empty()
+
+    TABIX(ch_samplesheet)
+
+    ch_versions = ch_versions.mix(TABIX.out.versions)
+
+    vcf_and_index = join_vcf_with_index(ch_samplesheet,tabix.out.vcf_index)
+
+    combined_vcf_and_vep = vcf_and_index.combine(vep_data_channel)
+
+    VCF2MAF(combined_vcf_and_vep,
+            ch_fasta_ref,
+            ch_fasta_fai_ref,
+            ch_exac_filter,
+            ch_exac_filter_index)
+
+    VEP(combined_vcf_and_vep)
+
+    ch_versions = ch_versions.mix(VCF2MAF.out.versions)
+
+    vcf2maf_for_annotation ( vcf_and_index )
+
+    vcf2maf_on_vep ( VEP.out.vcf )
+
+    ch_versions = ch_versions.mix(GENOMENEXUS_VCF2MAF.out.versions)
+
+    GENOMENEXUS_ANNOTATIONPIPELINE( GENOMENEXUS_VCF2MAF.out.maf )
+
+    ch_versions = ch_versions.mix(GENOMENEXUS_ANNOTATIONPIPELINE.out.versions)
+
+
+
 
     //
     // Collate and save software versions
     //
     softwareVersionsToYAML(ch_versions)
-        .collectFile(
+        .collectpath(
             storeDir: "${params.outdir}/pipeline_info",
-            name: 'nf_core_pipeline_software_mqc_versions.yml',
+            name: 'nf_core_pipeline_software_versions.yml',
             sort: true,
             newLine: true
         ).set { ch_collated_versions }
 
-    //
-    // MODULE: MultiQC
-    //
-    ch_multiqc_config        = Channel.fromPath(
-        "$projectDir/assets/multiqc_config.yml", checkIfExists: true)
-    ch_multiqc_custom_config = params.multiqc_config ?
-        Channel.fromPath(params.multiqc_config, checkIfExists: true) :
-        Channel.empty()
-    ch_multiqc_logo          = params.multiqc_logo ?
-        Channel.fromPath(params.multiqc_logo, checkIfExists: true) :
-        Channel.empty()
 
     summary_params      = paramsSummaryMap(
         workflow, parameters_schema: "nextflow_schema.json")
-    ch_workflow_summary = Channel.value(paramsSummaryMultiqc(summary_params))
-
-    ch_multiqc_custom_methods_description = params.multiqc_methods_description ?
-        file(params.multiqc_methods_description, checkIfExists: true) :
-        file("$projectDir/assets/methods_description_template.yml", checkIfExists: true)
-    ch_methods_description                = Channel.value(
-        methodsDescriptionText(ch_multiqc_custom_methods_description))
-
-    ch_multiqc_files = ch_multiqc_files.mix(
-        ch_workflow_summary.collectFile(name: 'workflow_summary_mqc.yaml'))
-    ch_multiqc_files = ch_multiqc_files.mix(ch_collated_versions)
-    ch_multiqc_files = ch_multiqc_files.mix(
-        ch_methods_description.collectFile(
-            name: 'methods_description_mqc.yaml',
-            sort: true
-        )
-    )
-
-    MULTIQC (
-        ch_multiqc_files.collect(),
-        ch_multiqc_config.toList(),
-        ch_multiqc_custom_config.toList(),
-        ch_multiqc_logo.toList()
-    )
 
     emit:
-    multiqc_report = MULTIQC.out.report.toList() // channel: /path/to/multiqc_report.html
     versions       = ch_versions                 // channel: [ path(versions.yml) ]
+    vep_vcf        = VEP.out.vcf
+    maf            = VCF2MAF.out.maf
+    nexus_annotated_maf = vcf2maf_for_annotation.out.maf
+    vep_maf        = vcf2maf_on_vep.out.maf
+}
+
+def join_vcf_with_index(vcf,index) {
+        vcf_channel = vcf
+            .map{
+                new Tuple(it[0].id,it)
+                }
+        index_channel = index
+            .map{
+                new Tuple(it[0].id,it)
+                }
+        mergedWithKey = vcf_channel
+            .join(index_channel)
+        merged = mergedWithKey
+            .map{
+                new Tuple(it[1][0],it[1][1],it[2][1])
+            }
+        return merged
+
 }
 
 /*
