@@ -2,6 +2,31 @@
     "name": "mskcc/vepcheck",
     "homePage": "https://github.com/mskcc/vepcheck",
     "repos": {
+        "https://github.com/mskcc-omics-workflows/modules.git": {
+            "modules": {
+                "msk": {
+                    "genomenexus/annotationpipeline": {
+                        "branch": "feature/genome_nexus_final",
+                        "git_sha": "7a604e94b5f02a4a3a865e1d0ecd219bec0a623c",
+                        "installed_by": ["genome_nexus"]
+                    },
+                    "genomenexus/vcf2maf": {
+                        "branch": "feature/genome_nexus_final",
+                        "git_sha": "7a604e94b5f02a4a3a865e1d0ecd219bec0a623c",
+                        "installed_by": ["genome_nexus"]
+                    }
+                }
+            },
+            "subworkflows": {
+                "msk": {
+                    "genome_nexus": {
+                        "branch": "feature/genome_nexus_final",
+                        "git_sha": "ff83f42ee921e361da0adbb3a4f3082d804b41b2",
+                        "installed_by": ["subworkflows"]
+                    }
+                }
+            }
+        },
         "https://github.com/nf-core/modules.git": {
             "modules": {
                 "nf-core": {
