@@ -61,6 +61,8 @@ workflow MSKCC_VEPCHECK {
     maf                 = VEPCHECK.out.maf
     nexus_annotated_maf = VEPCHECK.out.nexus_annotated_maf
     vep_maf             = VEPCHECK.out.vep_maf
+    maff_diff_html      = VEPCHECK.out.maff_diff_html
+    maff_diff_tsv       = VEPCHECK.out.maff_diff_tsv
 
 }
 /*

@@ -1,7 +1,7 @@
 process VCF2MAF {
 
     tag "${meta.id}_vep_${vep_version}"
-    label 'process_medium'
+    label 'process_high'
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
         'docker://mskcc/vcf2maf:1.6.17':
@@ -15,13 +15,16 @@ process VCF2MAF {
     tuple val(meta5),        path(exac_filter_tbi)
 
     output:
-    tuple val(meta), path("*.maf")     , emit: maf
+    tuple val(output_meta), path("*.maf")     , emit: maf
     path "versions.yml"                , emit: versions
 
     script:
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
     def forks = task.cpus * 2
+    output_meta = meta.clone()
+    output_meta.vep_version = vep_version
+    output_meta.type = "vcf2maf"
 
     """
     vcf2maf.pl \\
