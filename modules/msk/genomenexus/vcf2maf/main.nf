@@ -21,7 +21,7 @@ process GENOMENEXUS_VCF2MAF {
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
-    python3 /vcf2maf-lite/vcf2maf_lite.py -i ${vcf} ${args}
+    vcf2maf_lite.py -i ${vcf} ${args}
     mv vcf2maf_output/${vcf.baseName}.maf ${vcf.baseName}.vcf2maf_lite_0.0.1.maf
     echo '"${task.process}": vcf2maf_lite.py v.0.0.1' > versions.yml
     """
