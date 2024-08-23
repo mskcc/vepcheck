@@ -1,5 +1,6 @@
 process GENOMENEXUS_ANNOTATIONPIPELINE {
     tag "$meta.id"
+    errorStrategy 'ignore'
     label 'process_high'
 
 
