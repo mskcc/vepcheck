@@ -2,7 +2,7 @@ process MAF_DIFF {
 
 
     tag "$meta.id"
-    label 'process_medium'
+    label 'process_high'
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
         'docker://mskcc/vep_check_maff_diff:1.0.0':
@@ -23,7 +23,7 @@ process MAF_DIFF {
     """
     maf_diff.py \\
         --mafs ${mafs} \\
-        --labels ${labels}
+        --labels ${labels.join(' ')}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
