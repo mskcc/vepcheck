@@ -142,35 +142,142 @@ def join_vcf_with_index(vcf,index) {
 
 def create_maf_diff_list(vcf2maf_maf, vcf2maf_light_maf){
     maf_diff_input = Channel.empty()
+    test_vcf2maf = vcf2maf_maf
+                    .mix(
+                        vcf2maf_light_maf
+                    )
+                    .collect(flat: true)
+                    .flatMap{
+                        input_list = []
+                        vcf2maf_list = []
+                        vcf2maf_light_list = []
+                        combo_list = []
+                        vep_dict = [:]
+                        elem_dict = [:]
+                        it_index = 0
+                        while(it_index < it.size()){
+                            meta = it[it_index]
+                            file = it[it_index+1]
+                            id = meta.type + "_" + meta.vep_version
+                            if(meta.type == 'vcf2maf'){
+                                vcf2maf_list.add([id,file])
+                            }
+                            if(meta.type == 'vcf2maf_light'){
+                                vcf2maf_light_list.add([id,file])
+                            }
+                            elem_dict[id] = file
+
+                            for(single_vep_version in params.vep_version){
+                                if(meta.vep_version == single_vep_version){
+                                    if(single_vep_version in vep_dict){
+                                        vep_dict[single_vep_version].add([id,file])
+                                    }
+                                    else{
+                                        vep_dict[single_vep_version] = [[id,file]]
+                                    }
+
+                                }
+                            }
+                            it_index = it_index + 2
+                        }
+
+                        for(single_vep_key in vep_dict.keySet()){
+                                events = vep_dict[single_vep_key]
+                                events_index = 0
+                                label_list = []
+                                file_list = []
+                                while(events_index < events.size()){
+                                    label_list.add(events[events_index][0])
+                                    file_list.add(events[events_index][1])
+                                    events_index++
+                                }
+                                input_list.add(new Tuple(['id': label_list.join("_")], file_list, label_list))
+                        }
+
+                        all_vcf2maf_index = 0
+                        label_list = []
+                        file_list = []
+                        while(all_vcf2maf_index < vcf2maf_list.size()){
+                                events = vcf2maf_list[all_vcf2maf_index]
+                                label_list.add(events[0])
+                                file_list.add(events[1])
+                                all_vcf2maf_index++
+                            }
+                        input_list.add(new Tuple(['id': label_list.join("_")], file_list, label_list))
+                        all_vcf2maf_light_index = 0
+                        label_list = []
+                        file_list = []
+                        while(all_vcf2maf_light_index < vcf2maf_light_list.size()){
+                                events = vcf2maf_light_list[all_vcf2maf_light_index]
+                                label_list.add(events[0])
+                                file_list.add(events[1])
+                                all_vcf2maf_light_index++
+                            }
+                        input_list.add(new Tuple(['id': label_list.join("_")], file_list, label_list))
+
+
+
+                        for(single_vep_version in params.vep_version){
+                            for(other_vep_version in params.vep_version){
+                                if(single_vep_version > other_vep_version){
+                                    first_vcf2maf_id = "vcf2maf_" + single_vep_version
+                                    second_vcf2maf_id = "vcf2maf_" + other_vep_version
+                                    vcf2maf_label_list = [first_vcf2maf_id, second_vcf2maf_id]
+                                    vcf2maf_file_list = [elem_dict[first_vcf2maf_id], elem_dict[second_vcf2maf_id]]
+                                    first_vcf2maf_light_id = "vcf2maf_light_" + single_vep_version
+                                    second_vcf2maf_light_id = "vcf2maf_light_" + other_vep_version
+                                    vcf2maf_light_label_list = [first_vcf2maf_light_id, second_vcf2maf_light_id]
+                                    vcf2maf_light_file_list = [elem_dict[first_vcf2maf_light_id], elem_dict[second_vcf2maf_light_id]]
+                                    input_list.add(new Tuple(['id': vcf2maf_label_list.join("_")], vcf2maf_file_list, vcf2maf_label_list))
+                                    input_list.add(new Tuple(['id': vcf2maf_light_label_list.join("_")], vcf2maf_light_file_list, vcf2maf_light_label_list))
+                                }
+                            }
+
+                        }
+                        return input_list
+
+
+
+
+                    }
+
+}
+
+
+def create_maf_diff_list_old(vcf2maf_maf, vcf2maf_light_maf){
+    maf_diff_input = Channel.empty()
     test_all_vcf2maf = vcf2maf_maf
                         .collect(flat: false)
-                        .flatMap()
                         .map{
-                            index = 0
+                            it_index = 0
                             maf_label_list = []
                             maf_file_list = []
-                            while((index+1) < it.size()){
-                                maf_label_list.add(it[index].type + "_" + it[index].vep_version)
-                                maf_file_list.add(it[index+1])
-                                index = index + 2
+                            while(it_index < it.size()){
+                                label = it[it_index][0].type + "_" + it[it_index][0].vep_version
+                                if(!(label in maf_label_list)){
+                                    maf_label_list.add(it[it_index][0].type + "_" + it[it_index][0].vep_version)
+                                    maf_file_list.add(it[it_index][1])
+                                }
+                                it_index++
                             }
                             new Tuple(['id': maf_label_list.join("_")], maf_file_list, maf_label_list)
                         }
-    test_all_vcf2maf.view()
 
     maf_diff_input = maf_diff_input.mix(test_all_vcf2maf)
 
     test_all_vcf2maf_light = vcf2maf_light_maf
                         .collect(flat: false)
-                        .flatMap()
                         .map{
-                            index = 0
+                            it_index2 = 0
                             maf_label_list = []
                             maf_file_list = []
-                            while((index+1) < it.size()){
-                                maf_label_list.add(it[index].type + "_" + it[index].vep_version)
-                                maf_file_list.add(it[index+1])
-                                index = index + 2
+                            while(it_index2 < it.size()){
+                                label = it[it_index2][0].type + "_" + it[it_index2][0].vep_version
+                                if(!(label in maf_label_list)){
+                                    maf_label_list.add(it[it_index2][0].type + "_" + it[it_index2][0].vep_version)
+                                    maf_file_list.add(it[it_index2][1])
+                                }
+                                it_index2++
                             }
                             new Tuple(['id': maf_label_list.join("_")], maf_file_list, maf_label_list)
                         }
@@ -179,22 +286,50 @@ def create_maf_diff_list(vcf2maf_maf, vcf2maf_light_maf){
 
     for(single_vep_version in params.vep_version){
         vep_maf_this_vep = vcf2maf_maf
+                            .collect(flat: false)
+                            .flatMap()
                             .filter{
                                 it[0].vep_version == single_vep_version
                             }
         vep_maf_other_veps = vcf2maf_maf
+                            .collect(flat: false)
+                            .flatMap()
                             .filter{
                                 it[0].vep_version != single_vep_version
                             }
         combined_compare = vep_maf_this_vep.combine(vep_maf_other_veps)
-                            .map{
+                            .collect(flat: false)
+                            .flatMap{
+                                compare_list = []
+                                it_index3 = 0
                                 maf_label_list = []
                                 maf_file_list = []
-                                maf_label_list.add(it[0].type + "_" + it[0].vep_version)
-                                maf_label_list.add(it[2].type + "_" + it[2].vep_version)
-                                maf_file_list.add(it[1])
-                                maf_file_list.add(it[3])
-                                new Tuple(['id': maf_label_list.join("_")], maf_file_list, maf_label_list)
+                                while(it_index3 < it.size()){
+                                        if(!it){
+                                            continue
+                                        }
+                                        if(!it[it_index3]){
+                                            continue
+                                        }
+                                        println(it)
+                                        println(it_index3)
+                                        print(it[it_index3])
+
+                                        vep_version1 = it[it_index3][0].vep_version
+                                        vep_version2 = it[it_index3][2].vep_version
+                                        if (vep_version1 > vep_version2){
+                                            label = it[it_index3][0].type + "_" + it[it_index3][0].vep_version + "_" + it[it_index3][2].type + "_" + it[it_index3][2].vep_version
+                                        }
+                                        else{
+                                            label = it[it_index3][2].type + "_" + it[it_index3][2].vep_version + "_" + it[it_index3][0].type + "_" + it[it_index3][0].vep_version
+                                        }
+                                        if(!(label in maf_label_list)){
+                                            compare_list.add(new Tuple(['id': label], [it[it_index3][1], it[it_index3][3]], [it[it_index3][0].type + "_" + it[it_index3][0].vep_version, it[it_index3][2].type + "_" + it[it_index3][2].vep_version]))
+                                        }
+                                    it_index3++
+
+                                }
+                                return compare_list
                             }
         maf_diff_input = maf_diff_input.mix(combined_compare)
 
@@ -202,36 +337,60 @@ def create_maf_diff_list(vcf2maf_maf, vcf2maf_light_maf){
 
     for(single_vep_version in params.vep_version){
         vep_maf_this_vep = vcf2maf_light_maf
+                            .collect(flat: false)
+                            .flatMap()
                             .filter{
                                 it[0].vep_version == single_vep_version
                             }
         vep_maf_other_veps = vcf2maf_light_maf
+                            .collect(flat: false)
+                            .flatMap()
                             .filter{
                                 it[0].vep_version != single_vep_version
                             }
         combined_compare = vep_maf_this_vep.combine(vep_maf_other_veps)
-                            .map{
+                            .collect(flat: false)
+                            .flatMap{
+                                compare_list = []
+                                it_index4 = 0
                                 maf_label_list = []
                                 maf_file_list = []
-                                maf_label_list.add(it[0].type + "_" + it[0].vep_version)
-                                maf_label_list.add(it[2].type + "_" + it[2].vep_version)
-                                maf_file_list.add(it[1])
-                                maf_file_list.add(it[3])
-                                new Tuple(['id': maf_label_list.join("_")], maf_file_list, maf_label_list)
-                            }
+                                while(it_index4 < it.size()){
+                                    if(it[it_index4])
+                                    {
+                                        vep_version1 = it[it_index4][0].vep_version
+                                        vep_version2 = it[it_index4][2].vep_version
+                                        if (vep_version1 > vep_version2){
+                                            label = it[it_index4][0].type + "_" + it[it_index4][0].vep_version + "_" + it[it_index4][2].type + "_" + it[it_index4][2].vep_version
+                                        }
+                                        else{
+                                            label = it[it_index4][2].type + "_" + it[it_index4][2].vep_version + "_" + it[it_index4][0].type + "_" + it[it_index4][0].vep_version
+                                        }
+                                        if(!(label in maf_label_list)){
+                                            compare_list.add(new Tuple(['id': label], [it[it_index4][1], it[it_index4][3]], [it[it_index4][0].type + "_" + it[it_index4][0].vep_version, it[it_index4][2].type + "_" + it[it_index4][2].vep_version]))
+                                        }
+                                    }
 
+                                    it_index4++
+                                }
+
+                                return compare_list
+                            }
         maf_diff_input = maf_diff_input.mix(combined_compare)
 
     }
-
     vep_id_vcf2maf_maf = vcf2maf_maf
+                        .collect(flat: false)
+                        .flatMap()
                         .map{
                             new Tuple(it[0].vep_version, it[0], it[1])
                         }
     vep_id_vcf2maf_light_maf = vcf2maf_light_maf
-                    .map{
-                        new Tuple(it[0].vep_version, it[0], it[1])
-                    }
+                        .collect(flat: false)
+                        .flatMap()
+                        .map{
+                            new Tuple(it[0].vep_version, it[0], it[1])
+                        }
     test_comparisons_vcf2maf = vep_id_vcf2maf_maf.combine(vep_id_vcf2maf_light_maf, by: 0)
                                 .map{
                                     maf_label_list = []
@@ -290,11 +449,9 @@ def create_maf_check_list(maf) {
     maf_check_input = Channel.empty()
     maf_file = maf.collect()
         .map{
-            print(it)
             maf_file_list.add(it[1])
 
         }
-    print(maf_file_list)
     maf_label = maf.collect()
         .map{
             maf_label_list.add(it[0].type + "_" + it[0].vep_version)
