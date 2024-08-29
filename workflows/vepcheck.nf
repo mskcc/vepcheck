@@ -14,6 +14,8 @@ include { methodsDescriptionText } from '../subworkflows/local/utils_nfcore_vepc
 include { MAF_DIFF } from '../modules/local/maf_diff/main'
 include { BCFTOOLS_ANNOTATE } from '../modules/local/bcftools_annotate'
 include { BCFTOOLS_NORM } from '../modules/local/bcftools_norm'
+include { TABIX } from '../modules/local/tabix'
+include { BGZIP_ZIP } from '../modules/local/bgzip_zip'
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     RUN MAIN WORKFLOW
@@ -70,15 +72,25 @@ workflow VEPCHECK {
 
     ch_versions = Channel.empty()
 
-    biallelic_split = BCFTOOLS_NORM(ch_samplesheet)
+    BCFTOOLS_NORM(ch_samplesheet)
 
-    ch_versions = ch_versions.mix(biallelic_split.out.versions)
+    ch_versions = ch_versions.mix(BCFTOOLS_NORM.out.versions)
 
-    id_vcf = BCFTOOLS_ANNOTATE(biallelic_split.out.vcf)
+    BGZIP_ZIP(BCFTOOLS_NORM.out.vcf)
 
-    ch_versions = ch_versions.mix(id_vcf.out.versions)
+    ch_versions = ch_versions.mix(BGZIP_ZIP.out.versions)
 
-    combined_vcf_and_vep = id_vcf.out.vcf.combine(vep_data_channel)
+    TABIX(BGZIP_ZIP.out.gz_vcf)
+
+    ch_versions = ch_versions.mix(TABIX.out.versions)
+
+    vcf_and_index = join_vcf_with_index(BGZIP_ZIP.out.gz_vcf, TABIX.out.vcf_index)
+
+    BCFTOOLS_ANNOTATE(vcf_and_index)
+
+    ch_versions = ch_versions.mix(BCFTOOLS_ANNOTATE.out.versions)
+
+    combined_vcf_and_vep = BCFTOOLS_ANNOTATE.out.vcf.combine(vep_data_channel)
 
 
     VCF2MAF(combined_vcf_and_vep,
@@ -92,7 +104,7 @@ workflow VEPCHECK {
     ch_versions = ch_versions.mix(VCF2MAF.out.versions)
 
 
-    vcf2maf_for_annotation ( id_vcf )
+    vcf2maf_for_annotation ( BCFTOOLS_ANNOTATE.out.vcf )
 
     vcf2maf_on_vep ( VEP.out.vcf )
 
@@ -123,8 +135,8 @@ workflow VEPCHECK {
     versions         = ch_versions                 // channel: [ file(versions.yml) ]
     vep_vcf          = VEP.out.vcf
     maf              = VCF2MAF.out.maf
-    biallelic_vcf    = biallelic_split.out.vcf
-    id_vcf           = id_vcf.out.vcf
+    biallelic_vcf    = BCFTOOLS_NORM.out.vcf
+    id_vcf           = BCFTOOLS_ANNOTATE.out.vcf
     annotated_maf    = vcf2maf_for_annotation.out.maf
     vep_maf          = vcf2maf_on_vep.out.maf
     genome_nexus_maf = GENOMENEXUS_ANNOTATIONPIPELINE.out.annotated_maf
