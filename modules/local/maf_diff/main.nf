@@ -19,10 +19,12 @@ process MAF_DIFF {
     script:
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
+    def threads = task.cpus * 2
 
     """
     maf_diff.py \\
         --mafs ${mafs} \\
+        --threads ${threads} \\
         --labels ${labels.join(' ')}
 
     cat <<-END_VERSIONS > versions.yml
