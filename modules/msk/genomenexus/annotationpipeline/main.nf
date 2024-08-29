@@ -12,7 +12,7 @@ process GENOMENEXUS_ANNOTATIONPIPELINE {
     tuple val(meta), path(input_maf)
 
     output:
-    tuple val(meta), path("*.maf"), emit: annotated_maf
+    tuple val(output_meta), path("*.maf"), emit: annotated_maf
     path "versions.yml"           , emit: versions
 
     when:
@@ -21,6 +21,9 @@ process GENOMENEXUS_ANNOTATIONPIPELINE {
     script:
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
+    output_meta = meta.clone()
+    output_meta.vep_version = "112"
+    output_meta.type = "genome_nexus"
 
     """
     java -Xms${task.memory.toMega()/4}m \\
