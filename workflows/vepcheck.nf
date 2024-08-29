@@ -12,6 +12,8 @@ include { paramsSummaryMultiqc   } from '../subworkflows/nf-core/utils_nfcore_pi
 include { softwareVersionsToYAML } from '../subworkflows/nf-core/utils_nfcore_pipeline'
 include { methodsDescriptionText } from '../subworkflows/local/utils_nfcore_vepcheck_pipeline'
 include { MAF_DIFF } from '../modules/local/maf_diff/main'
+include { BCFTOOLS_ANNOTATE } from '../modules/local/bcftools_annotate'
+include { BCFTOOLS_NORM } from '../modules/local/bcftools_norm'
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     RUN MAIN WORKFLOW
@@ -68,8 +70,15 @@ workflow VEPCHECK {
 
     ch_versions = Channel.empty()
 
+    biallelic_split = BCFTOOLS_NORM(ch_samplesheet)
 
-    combined_vcf_and_vep = ch_samplesheet.combine(vep_data_channel)
+    ch_versions = ch_versions.mix(biallelic_split.out.versions)
+
+    id_vcf = BCFTOOLS_ANNOTATE(biallelic_split.out.vcf)
+
+    ch_versions = ch_versions.mix(id_vcf.out.versions)
+
+    combined_vcf_and_vep = id_vcf.combine(vep_data_channel)
 
 
     VCF2MAF(combined_vcf_and_vep,
@@ -83,7 +92,7 @@ workflow VEPCHECK {
     ch_versions = ch_versions.mix(VCF2MAF.out.versions)
 
 
-    vcf2maf_for_annotation ( ch_samplesheet )
+    vcf2maf_for_annotation ( id_vcf )
 
     vcf2maf_on_vep ( VEP.out.vcf )
 
