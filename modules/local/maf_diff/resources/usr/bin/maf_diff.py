@@ -106,8 +106,8 @@ def create_graph(maf_dicts,label, range, threads, max):
                     table_data[5].append(chr)
                     table_data[6].append(start)
                     table_data[7].append(end)
-                    table_data[8].append(start_shift)
-                    table_data[9].append(end_shift)
+                    table_data[8].append(str(start_shift))
+                    table_data[9].append(str(end_shift))
 
 
     def create_tree_data():
@@ -182,17 +182,17 @@ def create_graph(maf_dicts,label, range, threads, max):
 
     def create_table(tsv_data):
         if table_data[0]:
-            sorted_table = sorted(zip(table_data[0],table_data[1],table_data[2],table_data[3],table_data[4],table_data[5],table_data[6],table_data[7]))
-            col1, col2, col3, col4, col5, col6, col7, col8 = zip(*sorted_table)
+            sorted_table = sorted(zip(table_data[0],table_data[1],table_data[2],table_data[3],table_data[4],table_data[5],table_data[6],table_data[7], table_data[8], table_data[9]))
+            col1, col2, col3, col4, col5, col6, col7, col8, col9, col10 = zip(*sorted_table)
         else:
-            col1 = col2 = col3 = col4 = col5 = col6 = col7 = col8 = []
+            col1 = col2 = col3 = col4 = col5 = col6 = col7 = col8 = col9 = col10 = []
         index = 0
         while index < len(col1):
-            tsv_data = tsv_data + "\n" + "\t".join([col1[index], col2[index], col3[index], col4[index], col5[index], col6[index], col7[index], col8[index]])
+            tsv_data = tsv_data + "\n" + "\t".join([col1[index], col2[index], col3[index], col4[index], col5[index], col6[index], col7[index], col8[index], str(col9[index]), str(col10[index])])
             index += 1
         with open("maf_discordant_events_{}.tsv".format(label), 'w') as table_output:
             table_output.write(tsv_data)
-        table = go.Figure(data=[go.Table(header=dict(values=table_cols),cells=dict(values=[col1, col2, col3, col4, col5, col6, col7, col8]))])
+        table = go.Figure(data=[go.Table(header=dict(values=table_cols),cells=dict(values=[col1, col2, col3, col4, col5, col6, col7, col8, col9, col10]))])
         table.update_layout(height=1000)
         return table
 
@@ -203,7 +203,7 @@ def create_graph(maf_dicts,label, range, threads, max):
         shifted = stats_dict['shifted']
         unmatched = stats_dict['unmatched']
         missing = stats_dict['missing']
-        stats_line = "<p> Stats: Total events: {}, matched {} ({}%), shifted: {} ({}%), unmatched: {} ({}%), shifted_and_unmatched: {} ({}%), missing: {} ({}%) </p>".format(str(total), str(matched), str(round(matched/total)), str(shifted), str(round(shifted/total)), str(unmatched), str(round(unmatched/total)), str(shifted_and_unmatched), str(round(shifted_and_unmatched/total)), str(missing), str(round(missing/total)))
+        stats_line = "<p> Stats: Total events: {}, matched {} ({}%), shifted: {} ({}%), unmatched: {} ({}%), shifted_and_unmatched: {} ({}%), missing: {} ({}%) </p>".format(str(total), str(matched), str(round(matched/total,4)*100), str(shifted), str(round(shifted/total,4)*100), str(unmatched), str(round(unmatched/total,4)*100), str(shifted_and_unmatched), str(round(shifted_and_unmatched/total,4)*100), str(missing), str(round(missing/total,4)*100))
         with open("maf_diff_{}.html".format(label), 'a') as html_output:
             html_output.write(stats_line)
             if not table_data[0]:
@@ -221,16 +221,17 @@ def create_graph(maf_dicts,label, range, threads, max):
             next_label = next_event["class"]
             next_node_label = next_maf_id +"_"+ next_event["class"]
             node = create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'])
-            start_diff = next_pos[1] - row_start
-            end_diff = next_pos[2] - row_end
+            start_diff = int(next_pos[1]) - int(row_start)
+            end_diff = int(next_pos[2]) - int(row_end)
             return node, start_diff, end_diff
         if single_pos in next_maf:
+            next_pos = single_pos
             next_event = next_maf[single_pos]
             next_node_label = next_maf_id +"_"+ next_event["class"]
             next_label = next_event["class"]
             node = create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'])
-            start_diff = next_pos[1] - row_start
-            end_diff = next_pos[2] - row_end
+            start_diff = int(next_pos[1]) - int(row_start)
+            end_diff = int(next_pos[2]) - int(row_end)
             return node, start_diff, end_diff
 
         start_check = int(row_start) - range
@@ -253,12 +254,11 @@ def create_graph(maf_dicts,label, range, threads, max):
         next_node_label = next_maf_id + "_Not Found"
         next_event = None
         next_label = "Not Found"
-        node =  create_node(next_node_label,next_label, next_maf_id, None, None)
+        node =  create_node(next_node_label,next_label, next_maf_id, 0, 0)
         return node, 0, 0
 
     def process_event(event_list):
         current_maf_id = event_list[0]
-        current_maf_row_id_dict = event_list[1]
         next_maf_id = event_list[2]
         next_maf = event_list[3]
         next_maf_row_id_dict = event_list[4]
@@ -273,8 +273,8 @@ def create_graph(maf_dicts,label, range, threads, max):
             current_node_label = current_maf_id +"_" +single_event["class"]
             current_label = single_event["class"]
             current_node = create_node(current_node_label,current_label, current_maf_id, single_event['hugo'], single_event['type'])
-            next_node, start_diff, end_diff = find_match(single_pos,single_event,current_maf_row_id_dict,next_maf,next_maf_id,next_maf_row_id_dict)
-            create_link(current_node,next_node, current_maf_id, next_maf_id, single_pos[0], single_pos[1], single_pos[2])
+            next_node, start_diff, end_diff = find_match(single_pos,single_event,next_maf,next_maf_id,next_maf_row_id_dict)
+            create_link(current_node,next_node, current_maf_id, next_maf_id, single_pos[0], single_pos[1], single_pos[2], start_diff, end_diff)
         print("[{}] Finished working on chromosome {}".format(current_thr, current_chr))
 
 
