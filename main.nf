@@ -59,7 +59,10 @@ workflow MSKCC_VEPCHECK {
     versions            = VEPCHECK.out.versions                 // channel: [ path(versions.yml) ]
     vep_vcf             = VEPCHECK.out.vep_vcf
     maf                 = VEPCHECK.out.maf
-    nexus_annotated_maf = VEPCHECK.out.nexus_annotated_maf
+    biallelic_vcf       = VEPCHECK.out.biallelic_vcf
+    id_vcf              = VEPCHECK.out.id_vcf
+    annotated_maf       = VEPCHECK.out.annotated_maf
+    genome_nexus_maf    = VEPCHECK.out.genome_nexus_maf
     vep_maf             = VEPCHECK.out.vep_maf
     maff_diff_html      = VEPCHECK.out.maff_diff_html
     maff_diff_tsv       = VEPCHECK.out.maff_diff_tsv

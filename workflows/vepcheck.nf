@@ -78,7 +78,7 @@ workflow VEPCHECK {
 
     ch_versions = ch_versions.mix(id_vcf.out.versions)
 
-    combined_vcf_and_vep = id_vcf.combine(vep_data_channel)
+    combined_vcf_and_vep = id_vcf.out.vcf.combine(vep_data_channel)
 
 
     VCF2MAF(combined_vcf_and_vep,
@@ -102,7 +102,7 @@ workflow VEPCHECK {
 
     ch_versions = ch_versions.mix(GENOMENEXUS_ANNOTATIONPIPELINE.out.versions)
 
-    maf_diff_input = create_maf_diff_list(VCF2MAF.out.maf, vcf2maf_on_vep.out.maf)
+    maf_diff_input = create_maf_diff_list(VCF2MAF.out.maf, vcf2maf_on_vep.out.maf, GENOMENEXUS_ANNOTATIONPIPELINE.out.annotated_maf)
 
     MAF_DIFF( maf_diff_input )
 
@@ -120,13 +120,16 @@ workflow VEPCHECK {
         workflow, parameters_schema: "nextflow_schema.json")
 
     emit:
-    versions       = ch_versions                 // channel: [ file(versions.yml) ]
-    vep_vcf        = VEP.out.vcf
-    maf            = VCF2MAF.out.maf
-    nexus_annotated_maf = vcf2maf_for_annotation.out.maf
-    vep_maf        = vcf2maf_on_vep.out.maf
-    maff_diff_html = MAF_DIFF.out.html_output
-    maff_diff_tsv  = MAF_DIFF.out.tsv_output
+    versions         = ch_versions                 // channel: [ file(versions.yml) ]
+    vep_vcf          = VEP.out.vcf
+    maf              = VCF2MAF.out.maf
+    biallelic_vcf    = biallelic_split.out.vcf
+    id_vcf           = id_vcf.out.vcf
+    annotated_maf    = vcf2maf_for_annotation.out.maf
+    vep_maf          = vcf2maf_on_vep.out.maf
+    genome_nexus_maf = GENOMENEXUS_ANNOTATIONPIPELINE.out.annotated_maf
+    maff_diff_html   = MAF_DIFF.out.html_output
+    maff_diff_tsv    = MAF_DIFF.out.tsv_output
 
 }
 
@@ -149,17 +152,21 @@ def join_vcf_with_index(vcf,index) {
 
 }
 
-def create_maf_diff_list(vcf2maf_maf, vcf2maf_light_maf){
+def create_maf_diff_list(vcf2maf_maf, vcf2maf_light_maf, nexus_maf){
     maf_diff_input = Channel.empty()
     test_vcf2maf = vcf2maf_maf
                     .mix(
                         vcf2maf_light_maf
+                    )
+                    .mix(
+                        nexus_maf
                     )
                     .collect(flat: true)
                     .flatMap{
                         input_list = []
                         vcf2maf_list = []
                         vcf2maf_light_list = []
+                        nexus_list = []
                         combo_list = []
                         vep_dict = [:]
                         elem_dict = [:]
@@ -173,6 +180,9 @@ def create_maf_diff_list(vcf2maf_maf, vcf2maf_light_maf){
                             }
                             if(meta.type == 'vcf2maf_light'){
                                 vcf2maf_light_list.add([id,file])
+                            }
+                            if(meta.type == 'genome_nexus'){
+                                nexus_list.add([id,file])
                             }
                             elem_dict[id] = file
 
