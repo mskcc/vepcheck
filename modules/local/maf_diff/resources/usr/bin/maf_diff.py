@@ -5,31 +5,35 @@ import argparse
 from SecretColors import Palette
 import plotly.express as px
 import plotly.graph_objects as go
+from multiprocessing.pool import ThreadPool
+from threading import current_thread, Lock
 
 palette = Palette("material")
 
 
 def load_maf(maf_file):
     maf_dict = {}
+    label_dict = {}
     csv_reader = csv.DictReader(filter(lambda row: row[0]!='#', maf_file),delimiter='\t')
     for row in csv_reader:
-        position_id = (row['Chromosome'],row['Start_Position'],row['End_Position'])
+        position_id = (row['Chromosome'],row['Start_Position'],row['End_Position'], row['Reference_Allele'], row['Tumor_Seq_Allele1'], row['Tumor_Seq_Allele2'])
+        row_id = None
+        if "Id" in row and row["Id"] != ".":
+            row_id = row["Id"]
+            label_dict[row_id] = position_id
         maf_dict[position_id] = {
             "type": row['Variant_Type'],
             "class": row['Variant_Classification'],
             "hugo": row['Hugo_Symbol'],
-            "allele_R": row['Reference_Allele'],
-            "allele_T1": row['Tumor_Seq_Allele1'],
-            "allele_T2": row['Tumor_Seq_Allele2']
-
+            "row_id": row_id
         }
-    return maf_dict
+    return (maf_dict, label_dict)
 
 def get_random_color():
     palette.color_mode = "rgba"
     return palette.random()
 
-def create_graph(maf_dicts,label, range):
+def create_graph(maf_dicts,label, range, threads, max):
     source_list = []
     label_list = []
     color_list = []
@@ -42,10 +46,15 @@ def create_graph(maf_dicts,label, range):
     link_dict = {}
     new_node_info = {"num": 0 }
     maf_index = 0
-    table_cols = ['Transition', 'Variant Type','From','To','Hugo', 'Chromosome', 'Start', 'End']
-    table_data = [[],[],[],[],[],[],[],[]]
+    table_cols = ['Transition', 'Variant Type','From','To','Hugo', 'Chromosome', 'Start', 'End', 'Start_shift', 'End_shift']
+    stats_dict = {'total': 0, 'shifted': 0, 'match': 0, 'shifted_and_unmatched': 0, 'unmatched': 0, 'missing': 0}
+    table_data = [[],[],[],[],[],[],[],[],[],[]]
     tsv_data = "\t".join(table_cols)
     table_data_items = []
+    node_lock = Lock()
+    link_lock = Lock()
+    stats_lock = Lock()
+
     def create_node(node_label,label, maf_id, hugo, var_type):
         if node_label in node_dict:
             return node_dict[node_label]
@@ -56,13 +65,28 @@ def create_graph(maf_dicts,label, range):
         else:
             color = get_random_color()
             color_dict[label] = color
-        node_dict[node_label] = {"id":id, "label": label, "maf_id": maf_id, "color": color, "hugo": hugo, "var_type": var_type}
-        label_list.append(node_label)
-        color_list.append('rgba({},{},{},{})'.format(int(color[0]*255),int(color[1]*255),int(color[2]*255),color[3]))
+        with node_lock:
+            node_dict[node_label] = {"id":id, "label": label, "maf_id": maf_id, "color": color, "hugo": hugo, "var_type": var_type}
+            label_list.append(node_label)
+            color_list.append('rgba({},{},{},{})'.format(int(color[0]*255),int(color[1]*255),int(color[2]*255),color[3]))
         return node_dict[node_label]
 
-    def create_link(node1, node2, from_maf, to_maf, chr, start, end):
-        if node2['label'] =="Not Found" or node1["label"] != node2["label"]:
+    def create_link(node1, node2, from_maf, to_maf, chr, start, end, start_shift,end_shift):
+        with stats_lock:
+            if node2['label'] =="Not Found":
+                stats_dict["missing"] += 1
+            elif node1["label"] != node2["label"]:
+                if start_shift != 0 or end_shift != 0:
+                    stats_dict["shifted_and_unmatched"] += 1
+                else:
+                    stats_dict["unmatched"] += 1
+            elif start_shift != 0 or end_shift != 0:
+                stats_dict["shifted"] += 1
+            else:
+                stats_dict["match"] += 1
+            stats_dict['total'] += 1
+
+        if node2['label'] =="Not Found" or node1["label"] != node2["label"] or start_shift != 0 or end_shift != 0:
             link_id = (node1['id'],node2['id'])
             link_label = "{}->{}".format(node1["label"],node2["label"])
             if link_id not in link_dict:
@@ -72,15 +96,18 @@ def create_graph(maf_dicts,label, range):
             link_dict[link_id]['value'] += 1
             table_item_id = "{}_{}_{}_{}_{}_{}".format(node1['maf_id'], node2['maf_id'], link_label,chr,start,end)
             if table_item_id not in table_data_items:
-                table_data_items.append(table_item_id)
-                table_data[0].append(link_label)
-                table_data[1].append(node1['var_type'])
-                table_data[2].append(from_maf)
-                table_data[3].append(to_maf)
-                table_data[4].append(node1['hugo'])
-                table_data[5].append(chr)
-                table_data[6].append(start)
-                table_data[7].append(end)
+                with link_lock:
+                    table_data_items.append(table_item_id)
+                    table_data[0].append(link_label)
+                    table_data[1].append(node1['var_type'])
+                    table_data[2].append(from_maf)
+                    table_data[3].append(to_maf)
+                    table_data[4].append(node1['hugo'])
+                    table_data[5].append(chr)
+                    table_data[6].append(start)
+                    table_data[7].append(end)
+                    table_data[8].append(start_shift)
+                    table_data[9].append(end_shift)
 
 
     def create_tree_data():
@@ -109,7 +136,7 @@ def create_graph(maf_dicts,label, range):
             source_ranked_list.append((single_source,source_value[single_source]))
         source_ranked_list.sort(reverse=True,key=lambda x: x[1])
         top_ranked = []
-        for single_ranked_source in source_ranked_list[:10]:
+        for single_ranked_source in source_ranked_list[:max]:
             top_ranked.append(single_ranked_source[0])
 
         new_source_list = []
@@ -170,69 +197,85 @@ def create_graph(maf_dicts,label, range):
         return table
 
     def write_html(sankey_figure,table_figure):
+        total = stats_dict['total']
+        matched = stats_dict['match']
+        shifted_and_unmatched = stats_dict['shifted_and_unmatched']
+        shifted = stats_dict['shifted']
+        unmatched = stats_dict['unmatched']
+        missing = stats_dict['missing']
+        stats_line = "<p> Stats: Total events: {}, matched {} ({}%), shifted: {} ({}%), unmatched: {} ({}%), shifted_and_unmatched: {} ({}%), missing: {} ({}%) </p>".format(str(total), str(matched), str(round(matched/total)), str(shifted), str(round(shifted/total)), str(unmatched), str(round(unmatched/total)), str(shifted_and_unmatched), str(round(shifted_and_unmatched/total)), str(missing), str(round(missing/total)))
         with open("maf_diff_{}.html".format(label), 'a') as html_output:
-            html_output.write(sankey_figure.to_html(full_html=False, include_plotlyjs='cdn'))
-            html_output.write(table_figure.to_html(full_html=False, include_plotlyjs='cdn'))
+            html_output.write(stats_line)
+            if not table_data[0]:
+                html_output.write("<p> A complete match! </p>")
+            else:
+                html_output.write(sankey_figure.to_html(full_html=False, include_plotlyjs='cdn'))
+                html_output.write(table_figure.to_html(full_html=False, include_plotlyjs='cdn'))
 
-    def find_match(single_pos,single_event,next_maf):
-        (chromosome, start, end) = single_pos
-        if( single_pos in next_maf and
-        next_maf[single_pos]['allele_R'] == single_event['allele_R']  and
-        next_maf[single_pos]['allele_T1'] == single_event['allele_T1'] and
-        next_maf[single_pos]['allele_T2'] == single_event['allele_T2']):
+    def find_match(single_pos,single_event,next_maf, next_maf_id, next_maf_row_id_dict):
+        maf_row_id = single_event["row_id"]
+        (chromosome, row_start, row_end, row_ref, row_allele1, row_allele2) = single_pos
+        if maf_row_id and maf_row_id in next_maf_row_id_dict:
+            next_pos = next_maf_row_id_dict[maf_row_id]
+            next_event = next_maf[next_pos]
+            next_label = next_event["class"]
+            next_node_label = next_maf_id +"_"+ next_event["class"]
+            node = create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'])
+            start_diff = next_pos[1] - row_start
+            end_diff = next_pos[2] - row_end
+            return node, start_diff, end_diff
+        if single_pos in next_maf:
             next_event = next_maf[single_pos]
             next_node_label = next_maf_id +"_"+ next_event["class"]
             next_label = next_event["class"]
-            return create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'])
-        start_check = int(start) - range
-        start_check_end = int(start) + range
-        end_check_end = int(end) + range
+            node = create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'])
+            start_diff = next_pos[1] - row_start
+            end_diff = next_pos[2] - row_end
+            return node, start_diff, end_diff
+
+        start_check = int(row_start) - range
+        start_check_end = int(row_start) + range
+        end_check_end = int(row_end) + range
         while(start_check < start_check_end):
-            end_check = int(end) - range
+            end_check = int(row_end) - range
             while(end_check < end_check_end):
-                position = (chromosome,str(start_check), str(end_check))
-                if( position in next_maf and
-                next_maf[position]['allele_R'] == single_event['allele_R'] and
-                next_maf[position]['allele_T1'] == single_event['allele_T1'] and
-                next_maf[position]['allele_T2'] == single_event['allele_T2']):
+                position = (chromosome,str(start_check), str(end_check), row_ref, row_allele1, row_allele2)
+                if position in next_maf:
                     next_event = next_maf[position]
-                    start_diff = start_check - int(start)
-                    end_diff = end_check - int(end)
-                    shift_label = ""
-                    if start_diff:
-                        if start_diff > 5:
-                            start_diff = "5+"
-                        elif start_diff > 0:
-                            start_diff = "<5+"
-                        elif start_diff < -5:
-                            start_diff = "-5+"
-                        else:
-                            start_diff = "<5-"
-                    if end_diff:
-                        if end_diff > 5:
-                            end_diff = "5+"
-                        elif end_diff > 0:
-                            end_diff = "<5+"
-                        elif end_diff < -5:
-                            end_diff = "-5+"
-                        else:
-                            end_diff = "<5-"
-                    if start_diff and end_diff:
-                        shift_label = "start_shift_{}_end_shift_{}".format(start_diff,end_diff)
-                    elif end_diff:
-                        shift_label = "end_shift_{}".format(end_diff)
-                    elif start_diff:
-                        shift_label = "start_shift_{}".format(start_diff)
-                    next_node_label = next_maf_id +"_"+ next_event["class"] + "_" + shift_label
-                    next_label = next_event["class"] + "_" + shift_label
-                    return create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'])
+                    start_diff = start_check - int(row_start)
+                    end_diff = end_check - int(row_end)
+                    next_node_label = next_maf_id +"_"+ next_event["class"] + "_shifted"
+                    next_label = next_event["class"] + "_shifted"
+                    node = create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'])
+                    return node, start_diff, end_diff
                 end_check += 1
             start_check += 1
         next_node_label = next_maf_id + "_Not Found"
         next_event = None
         next_label = "Not Found"
-        return create_node(next_node_label,next_label, next_maf_id, None, None)
+        node =  create_node(next_node_label,next_label, next_maf_id, None, None)
+        return node, 0, 0
 
+    def process_event(event_list):
+        current_maf_id = event_list[0]
+        current_maf_row_id_dict = event_list[1]
+        next_maf_id = event_list[2]
+        next_maf = event_list[3]
+        next_maf_row_id_dict = event_list[4]
+        events = event_list[5]
+        current_chr = "NA"
+        current_thr = current_thread()._name
+        if events:
+            current_chr = events[0][0][0]
+            print("[{}] Working on chromosome {} with {} events".format(current_thr, current_chr, len(events)))
+
+        for single_pos, single_event in events:
+            current_node_label = current_maf_id +"_" +single_event["class"]
+            current_label = single_event["class"]
+            current_node = create_node(current_node_label,current_label, current_maf_id, single_event['hugo'], single_event['type'])
+            next_node, start_diff, end_diff = find_match(single_pos,single_event,current_maf_row_id_dict,next_maf,next_maf_id,next_maf_row_id_dict)
+            create_link(current_node,next_node, current_maf_id, next_maf_id, single_pos[0], single_pos[1], single_pos[2])
+        print("[{}] Finished working on chromosome {}".format(current_thr, current_chr))
 
 
 
@@ -240,15 +283,24 @@ def create_graph(maf_dicts,label, range):
 
     while (maf_index +1) < len(maf_dicts):
         current_maf_id = maf_dicts[maf_index][1]
+        current_maf_row_id_dict = maf_dicts[maf_index][2]
         next_maf_id = maf_dicts[maf_index+1][1]
         current_maf = maf_dicts[maf_index][0]
         next_maf = maf_dicts[maf_index+1][0]
+        next_maf_row_id_dict = maf_dicts[maf_index+1][2]
+        chr_dict = {}
+        event_list = []
         for single_pos,single_event in current_maf.items():
-            current_node_label = current_maf_id +"_" +single_event["class"]
-            current_label = single_event["class"]
-            current_node = create_node(current_node_label,current_label, current_maf_id, single_event['hugo'], single_event['type'])
-            next_node = find_match(single_pos,single_event,next_maf)
-            create_link(current_node,next_node, current_maf_id, next_maf_id, single_pos[0], single_pos[1], single_pos[2])
+            chromosome = single_pos[0]
+            if chromosome not in chr_dict:
+                chr_dict[chromosome] = []
+            chr_dict[chromosome].append((single_pos, single_event))
+        for single_chr in chr_dict:
+            chr_events = chr_dict[single_chr]
+            event_list.append((current_maf_id, current_maf_row_id_dict, next_maf_id, next_maf, next_maf_row_id_dict, chr_events))
+
+        with ThreadPool(threads) as pool:
+            pool.map(process_event, event_list)
         maf_index += 1
     create_tree_data()
     sankey = create_sankey()
@@ -256,18 +308,18 @@ def create_graph(maf_dicts,label, range):
     write_html(sankey, table)
 
 
-def diff_mafs(maf_list,label_list,range):
+def diff_mafs(maf_list,label_list,range,threads, max):
     maf_dicts = []
     index = 0
     label = ""
     while index < len(maf_list):
         single_maf = maf_list[index]
         single_label = label_list[index]
-        maf_obj = load_maf(single_maf)
-        maf_dicts.append((maf_obj, single_label))
+        maf_obj, maf_row_label = load_maf(single_maf)
+        maf_dicts.append((maf_obj, single_label, maf_row_label))
         label = label + "_{}".format(single_label)
         index += 1
-    create_graph(maf_dicts,label,range)
+    create_graph(maf_dicts,label,range,threads, max)
 
 
 
@@ -276,9 +328,11 @@ if __name__ == '__main__':
     parser.add_argument('--mafs',type=argparse.FileType('r', encoding='UTF-8'),help="The maf files", required=True,nargs='+')
     parser.add_argument('--labels',type=str, help="labels for the maf files in the same order", required=True,nargs='+')
     parser.add_argument('--range',type=int, default=10, help="Range to check in both -+ direction for a shifted read", required=False)
+    parser.add_argument('--threads',type=int, default=10, help="Number of threads to use", required=False)
+    parser.add_argument('--max',type=int, default=100, help="Show only a set top amount of classification changes", required=False)
     args = parser.parse_args()
     if len(args.mafs) < 2 or len(args.labels) < 2:
         print("At least 2 mafs or labels must be specified")
     if len(args.mafs) != len(args.labels):
         print("Labels and maf lists should be the same size")
-    diff_mafs(args.mafs, args.labels, args.range)
+    diff_mafs(args.mafs, args.labels, args.range, args.threads, args.max)
