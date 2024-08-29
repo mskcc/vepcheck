@@ -1,4 +1,5 @@
-process BCFTOOLS_NORM {
+process BGZIP_ZIP {
+
 
     tag "$meta.id"
     label 'process_medium'
@@ -8,30 +9,25 @@ process BCFTOOLS_NORM {
         'docker.io/mskcc/htslib:1.9' }"
 
     input:
-    tuple val(meta), path(inputVcf)
+    tuple val(meta), path(uncompressed_vcf)
 
     output:
-    tuple val(meta), path("*.vcf")     , emit: vcf
+    tuple val(meta), path("*.vcf.gz")  , emit: gz_vcf
     path "versions.yml"                , emit: versions
 
     script:
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
-    def threads = task.cpus * 2
 
     """
-    /usr/bin/bcftools norm \\
-        -N \\
-        -m-any \\
-        ${inputVcf} \\
-        --output ${prefix}.biallelic_split.vcf \\
-        --threads ${threads} \\
-        ${inputVcf}
+    /usr/local/bin/bgzip \\
+        ${uncompressed_vcf}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         bcftools: 1.9
         htslib: 1.9
+        tabix: 1.9
     END_VERSIONS
     """
 

@@ -9,22 +9,26 @@ process BCFTOOLS_ANNOTATE {
         'docker.io/mskcc/htslib:1.9' }"
 
     input:
-    tuple val(meta), path(inputVcf)
+    tuple val(meta), path(inputVcf), path(vcf_index)
 
     output:
-    tuple val(meta), path("*.vcf")     , emit: vcf
-    path "versions.yml"                , emit: versions
+    tuple val(meta), path("*.vcf")                 , emit: vcf
+    path "versions.yml"                            , emit: versions
 
     script:
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
     def threads = task.cpus * 2
+    def set_id_cmd =
+
     """
     /usr/bin/bcftools annotate \\
-        --set-id +'%CHROM\_%POS\_%REF\_%ALT{0}\_%ALT{1}' \\
+        --set-id '%CHROM\\_%POS\\_%REF\\_%ALT{0}\\_%ALT{1}' \\
         --threads ${threads} \\
         --output ${prefix}.annotate.vcf \\
         ${inputVcf}
+
+
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

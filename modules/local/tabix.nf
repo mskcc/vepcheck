@@ -12,8 +12,8 @@ process TABIX {
     tuple val(meta), path(inputVcf)
 
     output:
-    tuple val(meta), path("*.vcf.gz.tbi")  , emit: vcf_index
-    path "versions.yml"                , emit: versions
+    tuple val(meta), path("*.tbi")  , emit: vcf_index
+    path "versions.yml"                    , emit: versions
 
     script:
     def args = task.ext.args ?: ''
