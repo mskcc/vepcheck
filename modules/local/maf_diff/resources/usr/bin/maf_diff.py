@@ -18,14 +18,18 @@ def load_maf(maf_file):
     for row in csv_reader:
         position_id = (row['Chromosome'],row['Start_Position'],row['End_Position'], row['Reference_Allele'], row['Tumor_Seq_Allele1'], row['Tumor_Seq_Allele2'])
         row_id = None
-        if "Id" in row and row["Id"] != ".":
-            row_id = row["Id"]
+        transcript_id = "NA"
+        if "Transcript_ID" in row:
+            transcript_id = row["Transcript_ID"]
+        if "vcf_id" in row and row["vcf_id"] != ".":
+            row_id = row["vcf_id"]
             label_dict[row_id] = position_id
         maf_dict[position_id] = {
             "type": row['Variant_Type'],
             "class": row['Variant_Classification'],
             "hugo": row['Hugo_Symbol'],
-            "row_id": row_id
+            "row_id": row_id,
+            "transcript_id": transcript_id
         }
     return (maf_dict, label_dict)
 
@@ -47,7 +51,7 @@ def create_graph(maf_dicts,label, range, threads, max):
     new_node_info = {"num": 0 }
     maf_index = 0
     table_cols = ['Transition', 'Variant Type','From','To','Hugo', 'Chromosome', 'Start', 'End', 'Start_shift', 'End_shift']
-    stats_dict = {'total': 0, 'shifted': 0, 'match': 0, 'shifted_and_unmatched': 0, 'unmatched': 0, 'missing': 0}
+    stats_dict = {'total': 0, 'shifted': 0, 'match': 0, 'shifted_and_unmatched': 0, 'unmatched': 0, 'missing': 0, 'divergent_transcripts': 0}
     table_data = [[],[],[],[],[],[],[],[],[],[]]
     tsv_data = "\t".join(table_cols)
     table_data_items = []
@@ -55,7 +59,7 @@ def create_graph(maf_dicts,label, range, threads, max):
     link_lock = Lock()
     stats_lock = Lock()
 
-    def create_node(node_label,label, maf_id, hugo, var_type):
+    def create_node(node_label,label, maf_id, hugo, var_type, transcript_id):
         if node_label in node_dict:
             return node_dict[node_label]
         id = new_node_info["num"]
@@ -66,13 +70,15 @@ def create_graph(maf_dicts,label, range, threads, max):
             color = get_random_color()
             color_dict[label] = color
         with node_lock:
-            node_dict[node_label] = {"id":id, "label": label, "maf_id": maf_id, "color": color, "hugo": hugo, "var_type": var_type}
+            node_dict[node_label] = {"id":id, "label": label, "maf_id": maf_id, "transcript_id": transcript_id, "color": color, "hugo": hugo, "var_type": var_type}
             label_list.append(node_label)
             color_list.append('rgba({},{},{},{})'.format(int(color[0]*255),int(color[1]*255),int(color[2]*255),color[3]))
         return node_dict[node_label]
 
     def create_link(node1, node2, from_maf, to_maf, chr, start, end, start_shift,end_shift):
         with stats_lock:
+            if node1['transcript_id'] != node2['transcript_id']:
+                stats_dict["divergent_transcripts"] += 1
             if node2['label'] =="Not Found":
                 stats_dict["missing"] += 1
             elif node1["label"] != node2["label"]:
@@ -86,28 +92,29 @@ def create_graph(maf_dicts,label, range, threads, max):
                 stats_dict["match"] += 1
             stats_dict['total'] += 1
 
-        if node2['label'] =="Not Found" or node1["label"] != node2["label"] or start_shift != 0 or end_shift != 0:
-            link_id = (node1['id'],node2['id'])
-            link_label = "{}->{}".format(node1["label"],node2["label"])
-            if link_id not in link_dict:
-                node_color = node2["color"]
-                new_color = 'rgba({},{},{},{})'.format(int(node_color[0]*255),int(node_color[1]*255),int(node_color[2]*255),.5)
-                link_dict[link_id] = {'value':0,'color':new_color,'label':link_label}
-            link_dict[link_id]['value'] += 1
-            table_item_id = "{}_{}_{}_{}_{}_{}".format(node1['maf_id'], node2['maf_id'], link_label,chr,start,end)
-            if table_item_id not in table_data_items:
-                with link_lock:
-                    table_data_items.append(table_item_id)
-                    table_data[0].append(link_label)
-                    table_data[1].append(node1['var_type'])
-                    table_data[2].append(from_maf)
-                    table_data[3].append(to_maf)
-                    table_data[4].append(node1['hugo'])
-                    table_data[5].append(chr)
-                    table_data[6].append(start)
-                    table_data[7].append(end)
-                    table_data[8].append(str(start_shift))
-                    table_data[9].append(str(end_shift))
+        if node1['transcript_id'] == node2['transcript_id']:
+            if node2['label'] =="Not Found" or node1["label"] != node2["label"] or start_shift != 0 or end_shift != 0:
+                link_id = (node1['id'],node2['id'])
+                link_label = "{}->{}".format(node1["label"],node2["label"])
+                if link_id not in link_dict:
+                    node_color = node2["color"]
+                    new_color = 'rgba({},{},{},{})'.format(int(node_color[0]*255),int(node_color[1]*255),int(node_color[2]*255),.5)
+                    link_dict[link_id] = {'value':0,'color':new_color,'label':link_label}
+                link_dict[link_id]['value'] += 1
+                table_item_id = "{}_{}_{}_{}_{}_{}".format(node1['maf_id'], node2['maf_id'], link_label,chr,start,end)
+                if table_item_id not in table_data_items:
+                    with link_lock:
+                        table_data_items.append(table_item_id)
+                        table_data[0].append(link_label)
+                        table_data[1].append(node1['var_type'])
+                        table_data[2].append(from_maf)
+                        table_data[3].append(to_maf)
+                        table_data[4].append(node1['hugo'])
+                        table_data[5].append(chr)
+                        table_data[6].append(start)
+                        table_data[7].append(end)
+                        table_data[8].append(str(start_shift))
+                        table_data[9].append(str(end_shift))
 
 
     def create_tree_data():
@@ -203,11 +210,13 @@ def create_graph(maf_dicts,label, range, threads, max):
         shifted = stats_dict['shifted']
         unmatched = stats_dict['unmatched']
         missing = stats_dict['missing']
-        stats_line = "<p> Stats: Total events: {}, matched {} ({}%), shifted: {} ({}%), unmatched: {} ({}%), shifted_and_unmatched: {} ({}%), missing: {} ({}%) </p>".format(str(total), str(matched), str(round(matched/total,4)*100), str(shifted), str(round(shifted/total,4)*100), str(unmatched), str(round(unmatched/total,4)*100), str(shifted_and_unmatched), str(round(shifted_and_unmatched/total,4)*100), str(missing), str(round(missing/total,4)*100))
+        divergent_transcripts = stats_dict['divergent_transcripts']
+        stats_line = "<p> Stats: Total events: {}, matched {} ({}%), shifted: {} ({}%), unmatched: {} ({}%), shifted_and_unmatched: {} ({}%), divergent_transcripts: {} ({}%), missing: {} ({}%) </p>".format(str(total), str(matched), str(round(matched/total*100,4)), str(shifted), str(round(shifted/total*100,4)), str(unmatched), str(round(unmatched/total*100,4)), str(shifted_and_unmatched), str(round(shifted_and_unmatched/total*100,4)),str(divergent_transcripts), str(round(divergent_transcripts/total*100,4)), str(missing), str(round(missing/total*100,4)))
         with open("maf_diff_{}.html".format(label), 'a') as html_output:
             html_output.write(stats_line)
             if not table_data[0]:
-                html_output.write("<p> A complete match! </p>")
+                if divergent_transcripts == 0:
+                    html_output.write("<p> A complete match! </p>")
             else:
                 html_output.write(sankey_figure.to_html(full_html=False, include_plotlyjs='cdn'))
                 html_output.write(table_figure.to_html(full_html=False, include_plotlyjs='cdn'))
@@ -220,7 +229,7 @@ def create_graph(maf_dicts,label, range, threads, max):
             next_event = next_maf[next_pos]
             next_label = next_event["class"]
             next_node_label = next_maf_id +"_"+ next_event["class"]
-            node = create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'])
+            node = create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'], next_event['transcript_id'])
             start_diff = int(next_pos[1]) - int(row_start)
             end_diff = int(next_pos[2]) - int(row_end)
             return node, start_diff, end_diff
@@ -229,7 +238,7 @@ def create_graph(maf_dicts,label, range, threads, max):
             next_event = next_maf[single_pos]
             next_node_label = next_maf_id +"_"+ next_event["class"]
             next_label = next_event["class"]
-            node = create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'])
+            node = create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'], next_event['transcript_id'])
             start_diff = int(next_pos[1]) - int(row_start)
             end_diff = int(next_pos[2]) - int(row_end)
             return node, start_diff, end_diff
@@ -247,14 +256,14 @@ def create_graph(maf_dicts,label, range, threads, max):
                     end_diff = end_check - int(row_end)
                     next_node_label = next_maf_id +"_"+ next_event["class"] + "_shifted"
                     next_label = next_event["class"] + "_shifted"
-                    node = create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'])
+                    node = create_node(next_node_label,next_label, next_maf_id, next_event['hugo'], next_event['type'], next_event['transcript_id'])
                     return node, start_diff, end_diff
                 end_check += 1
             start_check += 1
         next_node_label = next_maf_id + "_Not Found"
         next_event = None
         next_label = "Not Found"
-        node =  create_node(next_node_label,next_label, next_maf_id, 0, 0)
+        node =  create_node(next_node_label,next_label, next_maf_id, 0, 0,0)
         return node, 0, 0
 
     def process_event(event_list):
@@ -272,7 +281,7 @@ def create_graph(maf_dicts,label, range, threads, max):
         for single_pos, single_event in events:
             current_node_label = current_maf_id +"_" +single_event["class"]
             current_label = single_event["class"]
-            current_node = create_node(current_node_label,current_label, current_maf_id, single_event['hugo'], single_event['type'])
+            current_node = create_node(current_node_label,current_label, current_maf_id, single_event['hugo'], single_event['type'], single_event['transcript_id'])
             next_node, start_diff, end_diff = find_match(single_pos,single_event,next_maf,next_maf_id,next_maf_row_id_dict)
             create_link(current_node,next_node, current_maf_id, next_maf_id, single_pos[0], single_pos[1], single_pos[2], start_diff, end_diff)
         print("[{}] Finished working on chromosome {}".format(current_thr, current_chr))
