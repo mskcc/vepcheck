@@ -76,6 +76,8 @@ MAF_HEADER = [
     "t_depth",
     "n_depth",
     "FILTER",
+    "vcf_id",
+    "Transcript_ID",
     "gnomAD_AF",
     "gnomAD_AFR_AF",
     "gnomAD_AMR_AF",
@@ -353,7 +355,7 @@ def resolve_vcf_allele_depth_values(
         allele_depth_values[variant_allele_idx] = process_datum(
             mapped_sample_format_data["AD"]
         )
-    
+
     # 2. SomaticSniper: handle SomaticSniper VCF lines, where allele depths must be extracted from BCOUNT
     elif is_somatic_sniper_vcf(vcf_format_data_keys):
         # bcount values are always reported in the order of "A", "C", "G", "T"
@@ -633,7 +635,7 @@ def resolve_vcf_counts_data(
     maf_data["t_ref_count"] = t_ref_count
     maf_data["t_alt_count"] = t_alt_count
     maf_data["t_depth"] = t_depth
-    
+
     # only resolve values for normal allele depths if "NORMAL" data is present in VCF
     if normal_sample_format_data:
         (n_ref_count, n_alt_count, n_depth) = resolve_vcf_allele_depth_values(
@@ -793,6 +795,10 @@ def resolve_center_name(data, center_name):
         center = center_name
     return center
 
+def resolve_variant_id(data):
+    id = process_datum(data.get("ID"))
+    return id
+
 
 def resolve_sequence_source(data, sequence_source):
     """Resolves the sequence source."""
@@ -936,6 +942,7 @@ def resolve_vcf_variant_allele_data(vcf_data, maf_data):
 
     ref_allele, alt_allele = resolve_vcf_allele(vcf_data)
     start_pos = resolve_start_position(vcf_data)
+    variant_id = resolve_variant_id(vcf_data)
     variant_type = ""
     end_pos = ""
     variant_class = ""
@@ -966,6 +973,7 @@ def resolve_vcf_variant_allele_data(vcf_data, maf_data):
 
     maf_data["Variant_Classification"] = variant_class
     maf_data["Variant_Type"] = variant_type
+    maf_data["vcf_id"] = variant_id
     maf_data["Reference_Allele"] = ref_allele
     maf_data["Tumor_Seq_Allele1"] = ref_allele
     maf_data["Tumor_Seq_Allele2"] = alt_allele
@@ -1052,6 +1060,7 @@ def create_maf_record_from_vcf(
     maf_data["Matched_Norm_Sample_Barcode"] = matched_normal_sample_id
     maf_data["Center"] = center_name
     maf_data["Hugo_Symbol"] = resolve_hugo_symbol(vcf_data)
+    maf_data["Transcript_ID"] = vcf_data.get("Transcript_ID","")
     maf_data["Chromosome"] = resolve_chromosome(vcf_data)
     maf_data["Sequence_Source"] = resolve_sequence_source(vcf_data, sequence_source)
     maf_data["Verification_Status"] = DEFAULT_VERIFICATION_STATUS
@@ -1122,6 +1131,7 @@ def extract_vcf_format_info_data(
     parsed_vcf_info = {}
     if "|" in vcf_data["INFO"]:
         vcf_data["HUGO"] = vcf_data["INFO"].split("|")[3]
+        vcf_data["Transcript_ID"] = vcf_data["INFO"].split("|")[6]
     for key_value_pair in vcf_data["INFO"].split(";"):
         key = process_datum(key_value_pair.split("=")[0])
         try:
@@ -1513,12 +1523,12 @@ def extract_vcf_data_from_file(
     is_germline_data = "germline" in filename
     maf_data = []
     (vcf_file_header, raw_header_line) = get_vcf_file_header(filename)
-    
+
     if retain_info:
         retain_info = expand_maf_header(retain_info, False)
-    if retain_fmt and matched_normal_sample_id: 
+    if retain_fmt and matched_normal_sample_id:
         retain_fmt = expand_maf_header(retain_fmt, True)
-    
+
     for record_index, line in enumerate(extract_file_data(filename)):
         if not is_valid_mutation_record_to_process(
             raw_header_line, vcf_file_header, line
@@ -1636,7 +1646,7 @@ def main(input_data, output_directory, center, sequence_source, tumor_id, normal
         except:
             print("The output path '%s' is ivalid" % output_directory)
             sys.exit(1)
-    
+
     if retain_info:
         retain_info = list(map(str.strip, retain_info.split(',')))
 
